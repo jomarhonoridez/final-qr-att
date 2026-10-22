@@ -7,7 +7,9 @@ export interface Profile {
   email: string;
   full_name: string | null;
   role: Role;
-  avatar_url?: string | null; // Keeps your image picker column link safe
+  avatar_url?: string | null; 
+  // ADDED: Tracks whether a teacher has approved this student's account
+  is_verified?: boolean; 
   created_at?: string;
   updated_at?: string;
 }
@@ -24,7 +26,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     console.error('Error fetching profile record:', error);
     throw error;
   }
-  return data;
+  return data as Profile | null;
 }
 
 /* ---------------- UPDATE PROFILE DATA ---------------- */
@@ -45,5 +47,5 @@ export async function updateProfile(
   if (error) {
     console.error('Error executing profile modification matrix:', error);
   }
-  return { data, error };
+  return { data: data as Profile | null, error };
 }

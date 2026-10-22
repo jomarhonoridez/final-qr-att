@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase';
 
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
@@ -32,7 +33,7 @@ export default function RegisterScreen() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleRegister = async () => {
+   const handleRegister = async () => {
     setError(null);
 
     if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
@@ -64,10 +65,30 @@ export default function RegisterScreen() {
 
       if (authError) {
         setError(authError.message);
-      } else if (data.session) {
-        setSuccess(false);
       } else {
-        setSuccess(true);
+        // AUTOMATED HOOK: Create a pending approval log if a student registers
+        if (data?.user && role === 'student') {
+          const { error: requestError } = await supabase
+            .from('verification_requests')
+            .insert([
+              {
+                student_id: data.user.id,
+                student_name: fullName.trim(),
+                student_email: email.trim(),
+                status: 'pending'
+              }
+            ]);
+
+          if (requestError) {
+            console.error('Error logging validation request payload:', requestError);
+          }
+        }
+
+        if (data?.session) {
+          setSuccess(false);
+        } else {
+          setSuccess(true);
+        }
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -75,6 +96,7 @@ export default function RegisterScreen() {
       setLoading(false);
     }
   };
+
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

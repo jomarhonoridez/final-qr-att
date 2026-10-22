@@ -18,6 +18,7 @@ import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
 import { COLORS } from '@/constants/colors';
 import { signIn } from '@/lib/auth';
+import { getProfile } from '@/lib/profiles'; // IMPORTED PROFILE MATRICES
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -36,6 +37,17 @@ export default function LoginScreen() {
 
       if (authError) {
         setError(authError.message);
+      } else if (data?.user) {
+        // 1. Fetch user's profile details to check role and verification status
+        const profile = await getProfile(data.user.id);
+
+        // 2. BLOCK HOOK: If they are a student and not verified, redirect them immediately
+        if (profile?.role === 'student' && !profile?.is_verified) {
+          router.replace('/awaiting-approval');
+        } else {
+          // Allowed or approved users proceed safely to the system dashboard layout tabs
+          router.replace('/dashboard');
+        }
       } else {
         router.replace('/dashboard');
       }
@@ -188,5 +200,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-styles.link
-styles.link

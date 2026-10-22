@@ -1,5 +1,6 @@
+import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Tabs } from 'expo-router';
+
 import { Platform } from 'react-native'; 
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -12,18 +13,24 @@ export default function TabLayout() {
   const { user } = useAuth();
   const [role, setRole] = useState<Role | null>(null);
   const { darkMode } = useGlobalTheme();
+  const router = useRouter(); 
 
   useEffect(() => {
-    if (!user) {
+    if (!user) { 
       setRole(null);
       return;
     }
-    
+
     getProfile(user.id).then((profile) => {
       setRole(profile?.role ?? 'student');
+
+      // ACTIVE GATE CHECK: Redirect unverified students immediately
+      if (profile?.role === 'student' && !profile?.is_verified) {
+        router.replace('/awaiting-approval');
+      }
     }).catch((error) => {
       console.error('Error loading role in layout:', error);
-      setRole('student'); // Fallback safely to student view
+      setRole('student'); 
     });
   }, [user]);
 
@@ -81,7 +88,7 @@ export default function TabLayout() {
         name="scan"
         options={{
           title: 'Scan QR',
-          href: role === 'teacher' ? null : undefined, // Completely hides tab if user is a teacher
+          href: role === 'teacher' ? null : undefined, 
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'qr-code' : 'qr-code-outline'}
@@ -127,7 +134,7 @@ export default function TabLayout() {
         name="teacher"
         options={{
           title: 'Teacher',
-          href: role === 'student' ? null : undefined, // Completely hides tab if user is a student
+          href: role === 'student' ? null : undefined, 
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'clipboard' : 'clipboard-outline'}
@@ -143,12 +150,28 @@ export default function TabLayout() {
         name="admin"
         options={{
           title: 'Admin',
-          href: role === 'student' ? null : undefined, // Completely removes admin view if role matches student
+          href: role === 'student' ? null : undefined, 
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'shield-checkmark' : 'shield-checkmark-outline'}
               color={color}
               size={22}
+            />
+          ),
+        }}
+      />
+
+      {/* ADDED: Dynamic Notifications/Approvals Tab - Visible ONLY to teachers */}
+      <Tabs.Screen
+        name="notification"
+        options={{
+          title: 'Approvals',
+          href: role === 'teacher' ? undefined : null, // Completely hides and strips the button node if student
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons 
+              name={focused ? 'notifications' : 'notifications-outline'} 
+              size={22} 
+              color={color} 
             />
           ),
         }}

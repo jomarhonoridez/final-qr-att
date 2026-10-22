@@ -205,36 +205,9 @@ export default function AdminScreen() {
         <FlatList
           data={events}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={
-            <View style={styles.formContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Event Title (e.g. BSIT-4B Attendance)"
-                placeholderTextColor="#777"
-                value={title}
-                onChangeText={setTitle}
-              />
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Event Description (Optional)"
-                placeholderTextColor="#777"
-                value={description}
-                onChangeText={setDescription}
-                multiline
-              />
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.buttonText}>{editingId ? 'Save Changes' : 'Create Event'}</Text>
-              </TouchableOpacity>
-              {editingId && (
-                <TouchableOpacity 
-                  style={[styles.saveButton, { backgroundColor: '#444', marginTop: 8 }]} 
-                  onPress={() => { setEditingId(null); setTitle(''); setDescription(''); }}
-                >
-                  <Text style={styles.buttonText}>Cancel Edit</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          }
+         // Remove everything between these layout brackets:
+ListHeaderComponent={null}
+
           renderItem={({ item }) => (
             <View style={styles.card}>
               <View style={{ flex: 1, marginRight: 8 }}>

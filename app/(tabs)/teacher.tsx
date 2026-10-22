@@ -7,6 +7,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { getProfile, type Role } from '@/lib/profiles';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import QRCode from 'react-native-qrcode-svg';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 
 export default function TeacherScreen() {
   const { user } = useAuth();
@@ -22,8 +23,47 @@ export default function TeacherScreen() {
   const [generatedValue, setGeneratedValue] = useState('');
   const [activeEventTitle, setActiveEventTitle] = useState('');
 
-  const [startsAt] = useState('2026-10-16 12:31:00');
-  const [endsAt] = useState('2026-10-16 13:31:00');
+  // Live Date Objects States
+  const [startsAt, setStartsAt] = useState<Date>(new Date());
+  const [endsAt, setEndsAt] = useState<Date>(() => {
+    const defaultEnd = new Date();
+    defaultEnd.setHours(defaultEnd.getHours() + 1);
+    return defaultEnd;
+  });
+
+  // Modal Picker Toggles
+  const [isStartPickerVisible, setStartPickerVisibility] = useState(false);
+  const [isEndPickerVisible, setEndPickerVisibility] = useState(false);
+
+  // Time preset configuration chips
+  const handleExtendEndTime = (minutes: number) => {
+    const freshStart = new Date();
+    setStartsAt(freshStart);
+    const prospectiveEnd = new Date(freshStart.getTime() + minutes * 60 * 1000);
+    setEndsAt(prospectiveEnd);
+  };
+
+  // Start Date Picker Handlers
+  const handleConfirmStart = (date: Date) => {
+    setStartsAt(date);
+    // Push the default end time out by 1 hour automatically
+    const defaultEnd = new Date(date.getTime() + 60 * 60 * 1000);
+    setEndsAt(defaultEnd);
+    setStartPickerVisibility(false);
+  };
+
+  // End Date Picker Handlers
+  const handleConfirmEnd = (date: Date) => {
+    if (date <= startsAt) {
+      setEndPickerVisibility(false);
+      setTimeout(() => {
+        Alert.alert('Invalid Time Scope', 'The event end window must occur after your scheduled start time.');
+      }, 400);
+      return;
+    }
+    setEndsAt(date);
+    setEndPickerVisibility(false);
+  };
 
   const themeContainer = darkMode ? styles.darkContainer : styles.lightContainer;
   const themeMainText = darkMode ? styles.darkMainText : styles.lightMainText;
@@ -38,7 +78,7 @@ export default function TeacherScreen() {
       const profile = await getProfile(user.id);
       setRole(profile?.role ?? 'student');
     } catch (error) {
-      console.error('Error fetching role in teacher matrix:', error);
+      console.error('Error fetching role context profile matrix:', error);
     }
   }, [user]);
 
@@ -51,33 +91,39 @@ export default function TeacherScreen() {
   /* ---------------- BACKEND SUBMIT HANDLER ---------------- */
   const handleCreateEvent = async () => {
     if (!title.trim() || !code.trim()) {
-      Alert.alert('Validation Error', 'Please fill in both the Event Title and Event Code fields.');
+      Alert.alert('Validation Error', 'Please complete both fields.');
       return;
     }
 
     if (!user) {
-      Alert.alert('Authentication Error', 'No active teacher session found.');
+      Alert.alert('Authentication Error', 'No valid user active session found.');
       return;
     }
 
     setLoading(true);
 
-    try {
+        try {
       const eventPayloadCode = code.trim().toUpperCase();
       const eventPayloadTitle = title.trim();
 
       const { data, error } = await supabase
         .from('events')
-        .insert([
-          {
-            title: eventPayloadTitle,
-            event_code: eventPayloadCode, 
-            created_by: user.id,     
-          }
-        ])
+        .upsert(
+          [
+            {
+              title: eventPayloadTitle,
+              event_code: eventPayloadCode, 
+              created_by: user.id,     
+              start_time: startsAt.toISOString(), // CHANGED: matches database column
+              end_time: endsAt.toISOString(),     // CHANGED: matches database column
+            }
+          ],
+          { onConflict: 'event_code' } 
+        )
         .select();
 
       if (error) throw error;
+
 
       setActiveEventTitle(eventPayloadTitle);
       setGeneratedValue(eventPayloadCode);
@@ -87,7 +133,7 @@ export default function TeacherScreen() {
       setCode('');
 
     } catch (error: any) {
-      console.error('Error inserting event context row:', error);
+      console.error('Database payload error:', error);
       Alert.alert('Database Operation Failed', error.message || 'Unable to store the event records.');
     } finally {
       setLoading(false);
@@ -97,6 +143,18 @@ export default function TeacherScreen() {
   const handleCloseAndRedirect = () => {
     setModalVisible(false);
     router.push('/history');
+  };
+
+  const formatDisplayTime = (dateObj: Date) => {
+    return dateObj.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    }) + ' at ' + dateObj.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
   };
 
   return (
@@ -130,21 +188,48 @@ export default function TeacherScreen() {
           />
 
           <Text style={[styles.inputLabel, themeMainText]}>Starts</Text>
-          <View style={[styles.timeRowDisplay, themeInput]}>
+          <Pressable onPress={() => setStartPickerVisibility(true)} style={[styles.timeRowDisplay, themeInput]}>
             <Ionicons name="sunny-outline" size={18} color={darkMode ? '#AAA' : '#555'} />
-            <Text style={[styles.timeText, themeMainText]}>Oct 16, 2026 at 12:31</Text>
-          </View>
+            <Text style={[styles.timeText, themeMainText]}>
+              {formatDisplayTime(startsAt)}
+            </Text>
+          </Pressable>
 
           <Text style={[styles.inputLabel, themeMainText]}>Ends</Text>
-          <View style={[styles.timeRowDisplay, themeInput]}>
+          <Pressable onPress={() => setEndPickerVisibility(true)} style={[styles.timeRowDisplay, themeInput]}>
             <Ionicons name="moon-outline" size={18} color={darkMode ? '#AAA' : '#555'} />
-            <Text style={[styles.timeText, themeMainText]}>Oct 16, 2026 at 13:31</Text>
-          </View>
+            <Text style={[styles.timeText, themeMainText]}>
+              {formatDisplayTime(endsAt)}
+            </Text>
+          </Pressable>
+
+          {/* Pure JS Universal Modal Pickers */}
+          <DateTimePickerModal
+            isVisible={isStartPickerVisible}
+            mode="datetime"
+            date={startsAt}
+            onConfirm={handleConfirmStart}
+            onCancel={() => setStartPickerVisibility(false)}
+          />
+
+          <DateTimePickerModal
+            isVisible={isEndPickerVisible}
+            mode="datetime"
+            date={endsAt}
+            onConfirm={handleConfirmEnd}
+            onCancel={() => setEndPickerVisibility(false)}
+          />
 
           <View style={styles.chipsRow}>
-            <View style={[styles.chip, darkMode && styles.darkChip]}><Text style={[styles.chipText, themeMainText]}>+30 min</Text></View>
-            <View style={[styles.chip, darkMode && styles.darkChip]}><Text style={[styles.chipText, themeMainText]}>+1 hour</Text></View>
-            <View style={[styles.chip, darkMode && styles.darkChip]}><Text style={[styles.chipText, themeMainText]}>+2 hours</Text></View>
+            <Pressable onPress={() => handleExtendEndTime(30)} style={[styles.chip, darkMode && styles.darkChip]}>
+              <Text style={[styles.chipText, themeMainText]}>+30 min</Text>
+            </Pressable>
+            <Pressable onPress={() => handleExtendEndTime(60)} style={[styles.chip, darkMode && styles.darkChip]}>
+              <Text style={[styles.chipText, themeMainText]}>+1 hour</Text>
+            </Pressable>
+            <Pressable onPress={() => handleExtendEndTime(120)} style={[styles.chip, darkMode && styles.darkChip]}>
+              <Text style={[styles.chipText, themeMainText]}>+2 hours</Text>
+            </Pressable>
           </View>
           <Text style={styles.chipHintText}>Tap a chip to set the end time from start.</Text>
 
@@ -188,52 +273,47 @@ export default function TeacherScreen() {
             </View>
 
             <Text style={styles.modalInstructionText}>
-              The QR is securely saved. Let students scan this screen, or tap close to view the tracking summary log.
+              Share this code with participants to allow them to scan and join the event.
             </Text>
-
-            <Pressable style={styles.modalDismissActionButton} onPress={handleCloseAndRedirect}>
-              <Text style={styles.modalDismissActionText}>Close & View History Records</Text>
-            </Pressable>
           </View>
         </View>
       </Modal>
     </View>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 50 },
-  lightContainer: { backgroundColor: '#FAF8F5' },
-  darkContainer: { backgroundColor: '#121212' },
-  screenHeaderTitle: { fontSize: 22, fontWeight: '700', marginTop: 10 },
-  screenHeaderSubtitle: { fontSize: 13, marginTop: 6, marginBottom: 25, lineHeight: 18 },
-  formContainer: { width: '100%' },
-  inputLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 12 },
-  inputField: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, height: 48, fontSize: 14 },
-  lightInput: { backgroundColor: '#FFFFFF', borderColor: '#EAEAEA', color: '#222' },
-  darkInput: { backgroundColor: '#1E1E1E', borderColor: '#2D2D2D', color: '#FFF' },
-  timeRowDisplay: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, height: 48 },
-  timeText: { fontSize: 14, marginLeft: 10 },
-  chipsRow: { flexDirection: 'row', marginTop: 12 },
-  chip: { backgroundColor: '#EAEAEA', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginRight: 8 },
-  darkChip: { backgroundColor: '#2D2D2D' },
-  chipText: { fontSize: 12, fontWeight: '500' },
-  chipHintText: { fontSize: 11, color: '#888', fontStyle: 'italic', marginTop: 6, marginBottom: 24 },
-  submitButton: { flexDirection: 'row', backgroundColor: '#4aa9db', borderRadius: 12, height: 50, justifyContent: 'center', alignItems: 'center' },
-  disabledButton: { opacity: 0.6 },
-  submitButtonText: { color: '#FFF', fontSize: 15, fontWeight: '600', marginLeft: 8 },
-  lightMainText: { color: '#222' },
-  darkMainText: { color: '#FFF' },
-  lightSubText: { color: '#666' },
-  darkSubText: { color: '#AAA' },
-  lightCard: { backgroundColor: '#FFFFFF', borderColor: '#F0EFEF' },
-  darkCard: { backgroundColor: '#1E1E1E', borderColor: '#2D2D2D' },
-  modalBlurOverlayShadow: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  modalCardWrapper: { width: '100%', borderRadius: 24, padding: 24, borderWidth: 1, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 },
-  modalEventTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  modalEventSubtitle: { fontSize: 13, marginTop: 4, marginBottom: 20 },
-qrCanvasContainerBox: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#EAEAEA', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
-modalInstructionText: { fontSize: 12, color: '#888', textAlign: 'center', marginTop: 16, paddingHorizontal: 10, lineHeight: 16 },
-modalDismissActionButton: { backgroundColor: '#4aa9db', width: '100%', height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 24 },
+container: { flex: 1, paddingHorizontal: 20, paddingTop: 50 },
+lightContainer: { backgroundColor: '#FAF8F5' },
+darkContainer: { backgroundColor: '#121212' },
+screenHeaderTitle: { fontSize: 22, fontWeight: '700', marginTop: 10 },
+screenHeaderSubtitle: { fontSize: 13, marginTop: 6, marginBottom: 25, lineHeight: 18 },
+formContainer: { width: '100%' },
+inputLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 12 },
+inputField: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, height: 48, fontSize: 14, borderColor: '#DDD', backgroundColor: '#FFF' },
+lightInput: { backgroundColor: '#FFFFFF', borderColor: '#E2E2E2' },
+darkInput: { backgroundColor: '#1E1E1E', borderColor: '#333', color: '#FFF' },
+timeRowDisplay: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, height: 48 },
+timeText: { fontSize: 14, marginLeft: 10 },
+chipsRow: { flexDirection: 'row', gap: 10, marginTop: 12, marginBottom: 6 },
+chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#EAEAEA', borderWidth: 1, borderColor: '#DDD' },
+darkChip: { backgroundColor: '#2A2A2A', borderColor: '#444' },
+chipText: { fontSize: 13, fontWeight: '500' },
+chipHintText: { fontSize: 12, color: '#888', marginBottom: 20 },
+submitButton: { backgroundColor: '#3498db', height: 50, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10 },
+disabledButton: { opacity: 0.6 },
+submitButtonText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
+modalBlurOverlayShadow: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+modalCardWrapper: { width: '100%', borderRadius: 24, padding: 24, alignItems: 'center', backgroundColor: '#FFF' },
+lightCard: { backgroundColor: '#FFF' },
+darkCard: { backgroundColor: '#1E1E1E' },
+modalEventTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+modalEventSubtitle: { fontSize: 13, marginTop: 4, marginBottom: 20 },
+qrCanvasContainerBox: { padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#EAEAFA', backgroundColor: '#FFF', marginBottom: 16 },
+modalInstructionText: { fontSize: 12, color: '#888', textAlign: 'center', marginHorizontal: 10, lineHeight: 16 },
+modalDismissActionButton: { backgroundColor: '#4aa9db', width: '100%', height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
 modalDismissActionText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
+darkMainText: { color: '#FFF' },
+lightMainText: { color: '#222' },
+darkSubText: { color: '#AAA' },
+lightSubText: { color: '#666' }
 });
